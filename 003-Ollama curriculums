@@ -1,0 +1,215 @@
+Hoy en día la inteligencia artificial se puede utilizar para automatizar muchas tareas que antes se hacían manualmente. En este proyecto he aplicado esa idea al análisis de un currículum, creando un programa en Python que permite procesar mi CV y generar automáticamente un resumen profesional junto con una evaluación del perfil. El objetivo es demostrar cómo se puede combinar programación con modelos de inteligencia artificial para resolver una tarea real de forma automática y más eficiente.
+
+
+1. Descargo mi CV micurriculum.pdf
+2. Creo estos archivos python:
+pdf_to_md.py:
+```
+#!/usr/bin/env python3
+from pypdf import PdfReader
+from pathlib import Path
+import re
+import sys
+
+
+def limpiar_texto(texto: str) -> str:
+    texto = re.sub(r'[ \t]+', ' ', texto)
+    texto = re.sub(r'\n{3,}', '\n\n', texto)
+    return texto.strip()
+
+
+def pdf_a_md(pdf_path: str, md_path: str) -> None:
+    ruta_pdf = Path(pdf_path)
+
+    if not ruta_pdf.exists():
+        print(f"Error: no existe el archivo {pdf_path}", file=sys.stderr)
+        sys.exit(1)
+
+    reader = PdfReader(ruta_pdf)
+    texto_completo = ""
+
+    for pagina in reader.pages:
+        texto = pagina.extract_text() or ""
+        texto_completo += texto + "\n\n"
+
+    texto_completo = limpiar_texto(texto_completo)
+
+    Path(md_path).write_text(texto_completo, encoding="utf-8")
+
+    print(f"✅ Markdown generado correctamente: {md_path}")
+
+
+if __name__ == "__main__":
+    pdf_a_md("micurriculum.pdf", "micurriculum.md")
+```
+
+
+resumir_cv.py:
+```
+#!/usr/bin/env python3
+import pathlib
+import sys
+import requests
+from textwrap import dedent
+
+
+def construir_prompt(contenido_md: str) -> str:
+    return dedent(
+        f"""
+        Eres un experto en selección de personal y redacción de perfiles profesionales.
+
+        Recibirás un currículum en formato Markdown.
+
+        Tu tarea:
+        - Escribir un resumen profesional en tercera persona.
+        - Extensión: 7–10 líneas (máx. 200 palabras).
+        - Estilo profesional y claro.
+        - Sintetizar la información, no copiar listas.
+
+        Además:
+        - Evalúa si el perfil es válido para el puesto:
+          profesor de ciclos formativos de formación profesional.
+        - Da un veredicto: VÁLIDO / NO VÁLIDO / INCONCLUYENTE.
+        - Justifica en 3–5 puntos.
+
+        Formato obligatorio:
+        1) Resumen
+        2) Veredicto
+        3) Motivos
+
+        CV:
+        ---
+        {contenido_md}
+        ---
+        """
+    ).strip()
+
+
+def resumir_cv(ruta_md: str) -> str:
+    ruta = pathlib.Path(ruta_md)
+
+    if not ruta.exists():
+        print(f"Error: no existe el archivo {ruta_md}", file=sys.stderr)
+        sys.exit(1)
+
+    contenido_md = ruta.read_text(encoding="utf-8", errors="replace")
+
+    prompt = construir_prompt(contenido_md)
+
+    url = "http://localhost:11434/api/generate"
+    payload = {
+        "model": "llama3:latest",
+        "prompt": prompt,
+        "stream": False,
+    }
+
+    try:
+        response = requests.post(url, json=payload, timeout=600)
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(f"Error al conectar con Ollama: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    data = response.json()
+
+    if "response" not in data:
+        print("Respuesta inesperada de Ollama:", file=sys.stderr)
+        print(data, file=sys.stderr)
+        sys.exit(1)
+
+    return data["response"].strip()
+
+
+if __name__ == "__main__":
+    resultado = resumir_cv("micurriculum.md")
+
+    pathlib.Path("resumen_micurriculum.txt").write_text(
+        resultado,
+        encoding="utf-8"
+    )
+
+    print("✅ Resumen generado: resumen_micurriculum.txt")
+```
+
+
+
+3. Terminal:
+serena@serena-portatil:/var/www/html/DAMlimpio/proyectosfinaldeunidad/proyecto$ python3 pdf_to_md.py
+✅ Markdown generado correctamente: micurriculum.md
+serena@serena-portatil:/var/www/html/DAMlimpio/proyectosfinaldeunidad/proyecto$ curl http://localhost:11434/api/tags
+{"models":[{"name":"llama3:latest","model":"llama3:latest","modified_at":"2026-02-11T12:05:43.503065454+01:00","size":4661224676,"digest":"365c0bd3c000a25d28ddbf732fe1c6add414de7275464c4e4d1c3b5fcb5d8ad1","details":{"parent_model":"","format":"gguf","family":"llama","families":["llama"],"parameter_size":"8.0B","quantization_level":"Q4_0"}}]}serena@serena-portatil:/var/www/html/DAMlimpio/proyectosfollama listd/proyecto$  
+NAME             ID              SIZE      MODIFIED     
+llama3:latest    365c0bd3c000    4.7 GB    34 hours ago    
+serena@serena-portatil:/var/www/html/DAMlimpio/proyectosfinaldeunidad/proyecto$ python3 resumir_cv.py
+✅ Resumen generado: resumen_micurriculum.txt
+serena@serena-portatil:/var/www/html/DAMlimpio/proyectosfinaldeunidad/proyecto$  
+
+
+4.  Se generan estos archivos:
+
+micurriculum.md:
+```
+Serena
+Sania Esteve
+Español nativo
+Inglés nivel A1 (en proceso
+de aprendizaje)
+Valenciano AltoEXPERIENCIA
+IDIOMASFORMACIÓN
+COMPLEMENTARIA
+Curso Implantación de planes
+y medidas de igualdad en las
+empresas.
+IFCT163PO- Inteligencia
+artificial aplicada a la
+empresa.
+Curso “Aprende a usar un
+CRM”
+Curso “ Gestión de
+posicionamiento SEM”
+Cursos “ Plan estratégico de
+social media nivel 1 y 2"Gran facilidad de comunicación. Capacidad de
+organización alta. Responsabilidad elevada. Con espíritu
+emprendedor. Aptitudes para el trabajo en equipo.
+Resolutiva. Dispongo de vehículo propio.
+ADMINISTRATIVA
+Atención telefónica y física a clientes
+Documentación
+Redactar y enviar correos 
+Marketing de las redes sociales 
+Plan de igualdad 
+InformesMISLATA FORMACION SL
+ADMINISTRATIVA
+serenaestevee@gmail.com637383762
+Mislata, Valencia
+FORMACIÓN 
+GRADO MEDIO TÉCNICO
+AUXILIAR ADMINISTRATIVO
+Colegio Santa Cruz de Mislata
+```
+
+resumen_micurriculum.txt:
+```
+**Resumen**
+
+Serenia Esteve es una profesional con una sólida formación administrativa, habilidades comunicativas y organizativas. Con experiencia en atención al cliente, documentación y redacción de informes, se destaca por su capacidad para trabajar en equipo y liderar proyectos. Posee conocimientos en paquete Office, Contasol y Factusol, lo que la convierte en una candidata valiosa para roles administrativos.
+
+**Veredicto**
+
+VÁLIDO
+
+**Motivos**
+
+1. La formación académica de Serena en Auxiliar Administrativo y su experiencia laboral en Mislata SL demuestran su capacidad para realizar tareas administrativas.
+2. Sus habilidades comunicativas y organizativas, así como su espíritu emprendedor, la convierten en una candidata ideal para roles que requieren trabajo en equipo y liderazgo.
+3. La amplia variedad de cursos y certificaciones en marketing digital, igualdad y inteligencia artificial aplicada a la empresa demuestran su disposición a seguir aprendiendo y actualizarse en áreas innovadoras.
+4. La capacidad de trabajar con paquete Office, Contasol y Factusol es un plus para cualquier rol administrativo que requiera habilidades en herramientas informáticas.
+5. La flexibilidad y adaptabilidad demostrada en diferentes roles laborales (administrativa y foránea) son características valiosas para un profesional que puede trabajar en entornos cambiantes.
+```
+
+
+En este proyecto he hecho un programa en Python que analiza automáticamente mi currículum usando inteligencia artificial. Primero, el programa convierte mi archivo micurriculum.pdf en un archivo de texto para poder trabajar con él. Después, ese texto se envía a un modelo de inteligencia artificial que tengo instalado en mi ordenador con Ollama (modelo llama3). La inteligencia artificial lee el contenido del CV y genera un resumen profesional, un veredicto sobre si soy válido para el puesto de profesor de Formación Profesional y una pequeña explicación con los motivos. El resultado se guarda en un archivo de texto automáticamente.
+
+Respecto al código que hicimos en clase, he hecho varias mejoras: ahora el programa comprueba si el archivo existe antes de ejecutarse, controla mejor los errores si falla la conexión con la inteligencia artificial, el código está mejor organizado en funciones y la respuesta está más estructurada (resumen, veredicto y motivos). En general, he hecho que el programa sea más claro, más seguro y más fácil de reutilizar.
+
+Con este proyecto he aprendido a trabajar con archivos PDF, a usar librerías en Python, a conectar con una API local y a integrar inteligencia artificial en un programa real.
